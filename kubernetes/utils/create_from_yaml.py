@@ -23,6 +23,7 @@ from kubernetes import client
 UPPER_FOLLOWED_BY_LOWER_RE = re.compile('(.)([A-Z][a-z]+)')
 LOWER_OR_NUM_FOLLOWED_BY_UPPER_RE = re.compile('([a-z0-9])([A-Z])')
 
+VALID_METHOD_PREFIXES = ["create", "patch", "replace"]
 
 def create_from_directory(
         k8s_client,
@@ -249,21 +250,25 @@ def create_from_yaml_single_item(
     kind = yml_object["kind"]
     kind = UPPER_FOLLOWED_BY_LOWER_RE.sub(r'\1_\2', kind)
     kind = LOWER_OR_NUM_FOLLOWED_BY_UPPER_RE.sub(r'\1_\2', kind).lower()
+    method_prefix = "create"
+    if "method_prefix" in kwargs and kwargs['method_prefix'] in VALID_METHOD_PREFIXES:
+        method_prefix = kwargs['method_prefix']
+        kwargs.pop('method_prefix', None)
     # Expect the user to create namespaced objects more often
-    if hasattr(k8s_api, "create_namespaced_{0}".format(kind)):
+    if hasattr(k8s_api, "{0}_namespaced_{1}".format(method_prefix, kind)):
         # Decide which namespace we are going to put the object in,
         # if any
         if "namespace" in yml_object["metadata"]:
             namespace = yml_object["metadata"]["namespace"]
             kwargs['namespace'] = namespace
-        resp = getattr(k8s_api, "create_namespaced_{0}".format(kind))(
+        resp = getattr(k8s_api, "{0}_namespaced_{1}".format(method_prefix, kind))(
             body=yml_object, **kwargs)
     else:
         kwargs.pop('namespace', None)
-        resp = getattr(k8s_api, "create_{0}".format(kind))(
+        resp = getattr(k8s_api, "{0}_{1}".format(method_prefix, kind))(
             body=yml_object, **kwargs)
     if verbose:
-        msg = "{0} created.".format(kind)
+        msg = "{0} {1}d.".format(kind, method_prefix)
         if hasattr(resp, 'status'):
             msg += " status='{0}'".format(str(resp.status))
         print(msg)
